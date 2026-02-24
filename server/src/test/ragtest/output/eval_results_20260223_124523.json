@@ -1,0 +1,143 @@
+{
+  "metadata": {
+    "input_path": "test/ragtest/sample_dataset.json",
+    "timestamp": "2026-02-23T12:45:23.434382",
+    "num_queries": 5,
+    "k_values": [
+      3,
+      5,
+      10
+    ],
+    "pdf_paths": [],
+    "total_runtime_sec": 14.19
+  },
+  "aggregate": {
+    "recall@3": 0.0,
+    "precision@3": 0.0,
+    "ndcg@3": 0.0,
+    "recall@5": 0.0,
+    "precision@5": 0.0,
+    "ndcg@5": 0.0,
+    "recall@10": 0.0,
+    "precision@10": 0.0,
+    "ndcg@10": 0.0,
+    "mrr": 0.0
+  },
+  "per_query": [
+    {
+      "query": "Show me beautiful lake views in Udaipur at sunset",
+      "success": true,
+      "retrieved_count": 0,
+      "relevant_count": 0,
+      "matched_count": 0,
+      "retrieved_ids": [],
+      "relevant_ids": [],
+      "metrics": {
+        "recall@3": 0.0,
+        "precision@3": 0.0,
+        "ndcg@3": 0.0,
+        "recall@5": 0.0,
+        "precision@5": 0.0,
+        "ndcg@5": 0.0,
+        "recall@10": 0.0,
+        "precision@10": 0.0,
+        "ndcg@10": 0.0,
+        "mrr": 0.0
+      },
+      "query_time_sec": 12.379,
+      "assembled_prompt_preview": "No relevant content found for this query."
+    },
+    {
+      "query": "Best heritage forts and palaces in Jaipur",
+      "success": true,
+      "retrieved_count": 0,
+      "relevant_count": 0,
+      "matched_count": 0,
+      "retrieved_ids": [],
+      "relevant_ids": [],
+      "metrics": {
+        "recall@3": 0.0,
+        "precision@3": 0.0,
+        "ndcg@3": 0.0,
+        "recall@5": 0.0,
+        "precision@5": 0.0,
+        "ndcg@5": 0.0,
+        "recall@10": 0.0,
+        "precision@10": 0.0,
+        "ndcg@10": 0.0,
+        "mrr": 0.0
+      },
+      "query_time_sec": 0.028,
+      "assembled_prompt_preview": "No relevant content found for this query."
+    },
+    {
+      "query": "Peaceful beaches in Goa without crowds",
+      "success": true,
+      "retrieved_count": 0,
+      "relevant_count": 0,
+      "matched_count": 0,
+      "retrieved_ids": [],
+      "relevant_ids": [],
+      "metrics": {
+        "recall@3": 0.0,
+        "precision@3": 0.0,
+        "ndcg@3": 0.0,
+        "recall@5": 0.0,
+        "precision@5": 0.0,
+        "ndcg@5": 0.0,
+        "recall@10": 0.0,
+        "precision@10": 0.0,
+        "ndcg@10": 0.0,
+        "mrr": 0.0
+      },
+      "query_time_sec": 0.028,
+      "assembled_prompt_preview": "No relevant content found for this query."
+    },
+    {
+      "query": "Spiritual temples to visit in Varanasi",
+      "success": true,
+      "retrieved_count": 0,
+      "relevant_count": 0,
+      "matched_count": 0,
+      "retrieved_ids": [],
+      "relevant_ids": [],
+      "metrics": {
+        "recall@3": 0.0,
+        "precision@3": 0.0,
+        "ndcg@3": 0.0,
+        "recall@5": 0.0,
+        "precision@5": 0.0,
+        "ndcg@5": 0.0,
+        "recall@10": 0.0,
+        "precision@10": 0.0,
+        "ndcg@10": 0.0,
+        "mrr": 0.0
+      },
+      "query_time_sec": 0.029,
+      "assembled_prompt_preview": "No relevant content found for this query."
+    },
+    {
+      "query": "Mountain trekking routes in Manali",
+      "success": true,
+      "retrieved_count": 0,
+      "relevant_count": 0,
+      "matched_count": 0,
+      "retrieved_ids": [],
+      "relevant_ids": [],
+      "metrics": {
+        "recall@3": 0.0,
+        "precision@3": 0.0,
+        "ndcg@3": 0.0,
+        "recall@5": 0.0,
+        "precision@5": 0.0,
+        "ndcg@5": 0.0,
+        "recall@10": 0.0,
+        "precision@10": 0.0,
+        "ndcg@10": 0.0,
+        "mrr": 0.0
+      },
+      "query_time_sec": 0.028,
+      "assembled_prompt_preview": "No relevant content found for this query."
+    }
+  ]
+}

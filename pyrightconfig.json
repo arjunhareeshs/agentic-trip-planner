@@ -1,0 +1,11 @@
+{
+    "extraPaths": [
+        "server/src",
+        "server"
+    ],
+    "pythonVersion": "3.12",
+    "pythonPlatform": "Windows",
+    "reportMissingImports": "warning",
+    "reportMissingModuleSource": "none",
+    "typeCheckingMode": "basic"
+}

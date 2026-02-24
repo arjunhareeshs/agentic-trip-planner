@@ -1,0 +1,36 @@
+{
+  "pdf_paths": [],
+  "k_values": [3, 5, 10],
+  "queries": [
+    {
+      "query": "Show me beautiful lake views in Udaipur at sunset",
+      "relevant_ids": [],
+      "relevant_keywords": ["lake", "udaipur", "sunset", "pichola", "fateh sagar"],
+      "graded_relevance": {}
+    },
+    {
+      "query": "Best heritage forts and palaces in Jaipur",
+      "relevant_ids": [],
+      "relevant_keywords": ["fort", "palace", "jaipur", "amber", "hawa mahal", "heritage"],
+      "graded_relevance": {}
+    },
+    {
+      "query": "Peaceful beaches in Goa without crowds",
+      "relevant_ids": [],
+      "relevant_keywords": ["beach", "goa", "peaceful", "quiet", "serene", "uncrowded"],
+      "graded_relevance": {}
+    },
+    {
+      "query": "Spiritual temples to visit in Varanasi",
+      "relevant_ids": [],
+      "relevant_keywords": ["temple", "varanasi", "spiritual", "ghat", "kashi", "prayer"],
+      "graded_relevance": {}
+    },
+    {
+      "query": "Mountain trekking routes in Manali",
+      "relevant_ids": [],
+      "relevant_keywords": ["trek", "mountain", "manali", "hike", "valley", "rohtang"],
+      "graded_relevance": {}
+    }
+  ]
+}

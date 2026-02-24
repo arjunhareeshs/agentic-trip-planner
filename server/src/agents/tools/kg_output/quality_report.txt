@@ -1,0 +1,41 @@
+============================================================
+TOURISM KNOWLEDGE GRAPH — QUALITY REPORT
+============================================================
+
+GRAPH STATISTICS:
+  Total nodes: 722
+  Total edges: 2489
+
+  Nodes by type:
+    City: 255
+    Continent: 514
+    Country: 653
+    Destination: 937
+    PlaceType: 729
+    Season: 527
+    State: 109
+
+  Edges by type:
+    BEST_VISITED_IN: 950
+    EVOKES: 2108
+    HAS_TYPE: 949
+    LOCATED_IN: 720
+    ON_CONTINENT: 654
+
+VALIDATION RESULTS:
+  Entities validated: 3724
+  Entities rejected: 0
+  Relationships validated: 3273
+  Relationships rejected: 594
+  Conflicts detected: 594
+
+AUDIT RESULTS:
+  Orphan nodes: 0
+  Incomplete destinations: 0
+
+TIER COVERAGE:
+  Tier 1 (Geography): 267
+  Tier 2 (Destinations/Types): 433
+  Tier 3 (Emotions): 9
+
+✅ NO ISSUES — Graph passed all quality checks!

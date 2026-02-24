@@ -1,0 +1,131 @@
+﻿
+> @figma/my-make-file@0.0.1 build
+> vite build
+
+[36mvite v6.3.5 [32mbuilding for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 16 modules transformed.
+node.exe : 
+[31mΓ£ù[39m Build 
+failed in 486ms
+At line:1 char:1
++ & "C:\Program Files\
+nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo    
+          : 
+NotSpecified: (    
+[31mΓ£ù[39m Build fa 
+   iled in 
+486ms:String)     [], 
+RemoteException
+    + 
+FullyQualifiedError   
+ Id : 
+NativeCommandErr    or
+ 
+[31merror during 
+build:
+[31m[vite]: Rollup 
+failed to resolve 
+import "figma:asset/e8
+5ac945be70074188b70973
+ecb1941b7cdeef0f.png" 
+from "C:/Users/sowbh/D
+ownloads/Hero Section 
+with Scroll 
+Transition (1)/src/app
+/pages/Home.tsx".
+This is most likely 
+unintended because it 
+can break your 
+application at 
+runtime.
+If you do want to 
+externalize this 
+module explicitly add 
+it to
+`build.rollupOptions.e
+xternal`[31m
+    at viteLog (file:/
+//C:/Users/sowbh/Downl
+oads/Hero%20Section%20
+with%20Scroll%20Transi
+tion%20(1)/node_module
+s/vite/dist/node/chunk
+s/dep-DBxKXgDP.js:4634
+5:15)
+    at file:///C:/User
+s/sowbh/Downloads/Hero
+%20Section%20with%20Sc
+roll%20Transition%20(1
+)/node_modules/vite/di
+st/node/chunks/dep-DBx
+KXgDP.js:46403:18
+    at onwarn (file://
+/C:/Users/sowbh/Downlo
+ads/Hero%20Section%20w
+ith%20Scroll%20Transit
+ion%20(1)/node_modules
+/@vitejs/plugin-react/
+dist/index.js:90:7)
+    at file:///C:/User
+s/sowbh/Downloads/Hero
+%20Section%20with%20Sc
+roll%20Transition%20(1
+)/node_modules/vite/di
+st/node/chunks/dep-DBx
+KXgDP.js:46401:7
+    at onRollupLog (fi
+le:///C:/Users/sowbh/D
+ownloads/Hero%20Sectio
+n%20with%20Scroll%20Tr
+ansition%20(1)/node_mo
+dules/vite/dist/node/c
+hunks/dep-DBxKXgDP.js:
+46393:5)
+    at onLog (file:///
+C:/Users/sowbh/Downloa
+ds/Hero%20Section%20wi
+th%20Scroll%20Transiti
+on%20(1)/node_modules/
+vite/dist/node/chunks/
+dep-DBxKXgDP.js:46043:
+7)
+    at file:///C:/User
+s/sowbh/Downloads/Hero
+%20Section%20with%20Sc
+roll%20Transition%20(1
+)/node_modules/rollup/
+dist/es/shared/node-en
+try.js:20981:32
+    at Object.logger 
+[as onLog] (file:///C:
+/Users/sowbh/Downloads
+/Hero%20Section%20with
+%20Scroll%20Transition
+%20(1)/node_modules/ro
+llup/dist/es/shared/no
+de-entry.js:22968:9)
+    at ModuleLoader.ha
+ndleInvalidResolvedId 
+(file:///C:/Users/sowb
+h/Downloads/Hero%20Sec
+tion%20with%20Scroll%2
+0Transition%20(1)/node
+_modules/rollup/dist/e
+s/shared/node-entry.js
+:21712:26)
+    at file:///C:/User
+s/sowbh/Downloads/Hero
+%20Section%20with%20Sc
+roll%20Transition%20(1
+)/node_modules/rollup/
+dist/es/shared/node-en
+try.js:21670:26[39m

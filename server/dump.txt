@@ -1,0 +1,124 @@
+@dataclass
+class AdaptiveConfig:
+    """Configuration for adaptive crawling"""
+    confidence_threshold: float = 0.7
+    max_depth: int = 5
+    max_pages: int = 20
+    top_k_links: int = 3
+    min_gain_threshold: float = 0.1
+    strategy: str = "statistical"  # statistical, embedding, llm
+    
+    # Advanced parameters
+    saturation_threshold: float = 0.8
+    consistency_threshold: float = 0.7
+    coverage_weight: float = 0.4
+    consistency_weight: float = 0.3
+    saturation_weight: float = 0.3
+    
+    # Link scoring parameters
+    relevance_weight: float = 0.5
+    novelty_weight: float = 0.3
+    authority_weight: float = 0.2
+    
+    # Persistence
+    save_state: bool = False
+    state_path: Optional[str] = None
+    
+    # Embedding strategy parameters
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_llm_config: Optional[Union[LLMConfig, Dict]] = None  # Separate config for embeddings
+    n_query_variations: int = 10
+    coverage_threshold: float = 0.85
+    alpha_shape_alpha: float = 0.5
+    
+    # Minimum confidence threshold for relevance
+    embedding_min_confidence_threshold: float = 0.1  # Below this, content is considered completely irrelevant
+    # Example: If confidence < 0.1, stop immediately as query and content are unrelated
+    
+    # Embedding confidence calculation parameters
+    embedding_coverage_radius: float = 0.2  # Distance threshold for "covered" query points
+    # Example: With radius=0.2, a query point is considered covered if ANY document 
+    # is within cosine distance 0.2 (very similar). Smaller = stricter coverage requirement
+    
+    embedding_k_exp: float = 1.0  # Exponential decay factor for distance-to-score mapping
+    # Example: score = exp(-k_exp * distance). With k_exp=1, distance 0.2 → score 0.82,
+    # distance 0.5 → score 0.61. Higher k_exp = steeper decay = more emphasis on very close matches
+    
+    embedding_nearest_weight: float = 0.7  # Weight for nearest neighbor in hybrid scoring
+    embedding_top_k_weight: float = 0.3  # Weight for top-k average in hybrid scoring
+    # Example: If nearest doc has score 0.9 and top-3 avg is 0.6, final = 0.7*0.9 + 0.3*0.6 = 0.81
+    # Higher nearest_weight = more focus on best match vs neighborhood density
+    
+    # Embedding link selection parameters  
+    embedding_overlap_threshold: float = 0.85  # Similarity threshold for penalizing redundant links
+    # Example: Links with >0.85 similarity to existing KB get penalized to avoid redundancy
+    # Lower = more aggressive deduplication, Higher = allow more similar content
+    
+    # Embedding stopping criteria parameters
+    embedding_min_relative_improvement: float = 0.1  # Minimum relative improvement to continue
+    # Example: If confidence is 0.6, need improvement > 0.06 per batch to continue crawling
+    # Lower = more patient crawling, Higher = stop earlier when progress slows
+    
+    embedding_validation_min_score: float = 0.3  # Minimum validation score to trust convergence
+    # Example: Even if learning converged, keep crawling if validation score < 0.4
+    # This prevents premature stopping when we haven't truly covered the query space
+    
+    # Quality confidence mapping parameters (for display to user)
+    embedding_quality_min_confidence: float = 0.7  # Minimum confidence for validated systems
+    embedding_quality_max_confidence: float = 0.95  # Maximum realistic confidence
+    embedding_quality_scale_factor: float = 0.833  # Scaling factor for confidence mapping
+    # Example: Validated system with learning_score=0.5 → confidence = 0.7 + (0.5-0.4)*0.833 = 0.78
+    # These control how internal scores map to user-friendly confidence percentages
+    
+    def validate(self):
+        """Validate configuration parameters"""
+        assert 0 <= self.confidence_threshold <= 1, "confidence_threshold must be between 0 and 1"
+        assert self.max_depth > 0, "max_depth must be positive"
+        assert self.max_pages > 0, "max_pages must be positive"
+        assert self.top_k_links > 0, "top_k_links must be positive"
+        assert 0 <= self.min_gain_threshold <= 1, "min_gain_threshold must be between 0 and 1"
+        
+        # Check weights sum to 1
+        weight_sum = self.coverage_weight + self.consistency_weight + self.saturation_weight
+        assert abs(weight_sum - 1.0) < 0.001, f"Coverage weights must sum to 1, got {weight_sum}"
+        
+        weight_sum = self.relevance_weight + self.novelty_weight + self.authority_weight
+        assert abs(weight_sum - 1.0) < 0.001, f"Link scoring weights must sum to 1, got {weight_sum}"
+        
+        # Validate embedding parameters
+        assert 0 < self.embedding_coverage_radius < 1, "embedding_coverage_radius must be between 0 and 1"
+        assert self.embedding_k_exp > 0, "embedding_k_exp must be positive"
+        assert 0 <= self.embedding_nearest_weight <= 1, "embedding_nearest_weight must be between 0 and 1"
+        assert 0 <= self.embedding_top_k_weight <= 1, "embedding_top_k_weight must be between 0 and 1"
+        assert abs(self.embedding_nearest_weight + self.embedding_top_k_weight - 1.0) < 0.001, "Embedding weights must sum to 1"
+        assert 0 <= self.embedding_overlap_threshold <= 1, "embedding_overlap_threshold must be between 0 and 1"
+        assert 0 < self.embedding_min_relative_improvement < 1, "embedding_min_relative_improvement must be between 0 and 1"
+        assert 0 <= self.embedding_validation_min_score <= 1, "embedding_validation_min_score must be between 0 and 1"
+        assert 0 <= self.embedding_quality_min_confidence <= 1, "embedding_quality_min_confidence must be between 0 and 1"
+        assert 0 <= self.embedding_quality_max_confidence <= 1, "embedding_quality_max_confidence must be between 0 and 1"
+        assert self.embedding_quality_scale_factor > 0, "embedding_quality_scale_factor must be positive"
+        assert 0 <= self.embedding_min_confidence_threshold <= 1, "embedding_min_confidence_threshold must be between 0 and 1"
+    
+    @property
+    def _embedding_llm_config_dict(self) -> Optional[Dict]:
+        """Convert LLMConfig to dict format for backward compatibility."""
+        if self.embedding_llm_config is None:
+            return None
+        
+        if isinstance(self.embedding_llm_config, dict):
+            # Already a dict - return as-is for backward compatibility
+            return self.embedding_llm_config
+        
+        # Convert LLMConfig object to dict format
+        return {
+            'provider': self.embedding_llm_config.provider,
+            'api_token': self.embedding_llm_config.api_token,
+            'base_url': getattr(self.embedding_llm_config, 'base_url', None),
+            'temperature': getattr(self.embedding_llm_config, 'temperature', None),
+            'max_tokens': getattr(self.embedding_llm_config, 'max_tokens', None),
+            'top_p': getattr(self.embedding_llm_config, 'top_p', None),
+            'frequency_penalty': getattr(self.embedding_llm_config, 'frequency_penalty', None),
+            'presence_penalty': getattr(self.embedding_llm_config, 'presence_penalty', None),
+            'stop': getattr(self.embedding_llm_config, 'stop', None),
+            'n': getattr(self.embedding_llm_config, 'n', None),
+        }

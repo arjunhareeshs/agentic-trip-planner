@@ -1,0 +1,11 @@
+[
+  {
+    "page": 1,
+    "url": "https://example.com",
+    "markdown_length": 166,
+    "extracted_content_length": 323,
+    "word_count": 20,
+    "has_screenshot": false,
+    "has_extraction": true
+  }
+]

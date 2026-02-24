@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tourism Knowledge Graph — Interactive Viewer</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #0a0e1a;
+    color: #e0e6f0;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* Top Bar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #0f1628 0%, #1a1f3a 100%);
+    border-bottom: 1px solid rgba(99,102,241,0.25);
+    z-index: 100;
+    position: relative;
+  }
+
+  .topbar h1 {
+    font-size: 18px;
+    font-weight: 700;
+    background: linear-gradient(90deg, #818cf8, #c084fc, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.3px;
+  }
+
+  .topbar .stats {
+    display: flex;
+    gap: 20px;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  .topbar .stats span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .topbar .stats .num {
+    font-weight: 700;
+    color: #c084fc;
+    font-size: 14px;
+  }
+
+  /* Controls Panel */
+  .controls {
+    position: absolute;
+    top: 60px;
+    left: 16px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 280px;
+  }
+
+  .control-card {
+    background: rgba(15, 22, 40, 0.92);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  .control-card h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #818cf8;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  /* Search */
+  .search-wrap {
+    position: relative;
+  }
+
+  .search-wrap input {
+    width: 100%;
+    padding: 10px 12px 10px 36px;
+    background: rgba(30, 41, 82, 0.7);
+    border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 8px;
+    color: #e0e6f0;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .search-wrap input:focus {
+    border-color: #818cf8;
+  }
+
+  .search-wrap::before {
+    content: '🔍';
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+  }
+
+  .search-results {
+    max-height: 160px;
+    overflow-y: auto;
+    margin-top: 6px;
+  }
+
+  .search-results::-webkit-scrollbar { width: 4px; }
+  .search-results::-webkit-scrollbar-track { background: transparent; }
+  .search-results::-webkit-scrollbar-thumb { background: #4338ca; border-radius: 4px; }
+
+  .search-item {
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .search-item:hover {
+    background: rgba(99,102,241,0.15);
+  }
+
+  .search-item .type-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  /* Filter checkboxes */
+  .filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.15s;
+    user-select: none;
+  }
+
+  .filter-item:hover {
+    background: rgba(99,102,241,0.1);
+  }
+
+  .filter-item input[type="checkbox"] {
+    accent-color: #818cf8;
+    width: 14px;
+    height: 14px;
+  }
+
+  .filter-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .filter-count {
+    color: #64748b;
+    font-size: 10px;
+    margin-left: auto;
+  }
+
+  /* Edge filter */
+  .edge-filter-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .edge-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.15s;
+    user-select: none;
+  }
+
+  .edge-filter-item:hover {
+    background: rgba(99,102,241,0.1);
+  }
+
+  .edge-filter-item input[type="checkbox"] {
+    accent-color: #818cf8;
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Node Detail Panel */
+  .detail-panel {
+    position: absolute;
+    top: 60px;
+    right: 16px;
+    z-index: 50;
+    width: 300px;
+    background: rgba(15, 22, 40, 0.95);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 12px;
+    padding: 18px;
+    display: none;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+
+  .detail-panel::-webkit-scrollbar { width: 4px; }
+  .detail-panel::-webkit-scrollbar-track { background: transparent; }
+  .detail-panel::-webkit-scrollbar-thumb { background: #4338ca; border-radius: 4px; }
+
+  .detail-panel.visible { display: block; }
+
+  .detail-panel .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 18px;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .detail-panel .close-btn:hover { color: #f472b6; }
+
+  .detail-panel .node-name {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    padding-right: 24px;
+  }
+
+  .detail-panel .node-type {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-bottom: 14px;
+  }
+
+  .detail-section {
+    margin-bottom: 12px;
+  }
+
+  .detail-section h4 {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #818cf8;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  .detail-rel {
+    padding: 5px 8px;
+    font-size: 11px;
+    border-radius: 5px;
+    margin-bottom: 3px;
+    background: rgba(30, 41, 82, 0.5);
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .detail-rel:hover {
+    background: rgba(99,102,241,0.2);
+  }
+
+  .detail-rel .rel-type {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(99,102,241,0.2);
+    color: #a5b4fc;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* Graph Container */
+  #graph-container {
+    width: 100%;
+    height: calc(100vh - 56px);
+    background: #0a0e1a;
+  }
+
+  /* Loading */
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,14,26,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    transition: opacity 0.4s;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid rgba(99,102,241,0.2);
+    border-top-color: #818cf8;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+
+  /* Legend / Help */
+  .help-hint {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 22, 40, 0.85);
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #64748b;
+    z-index: 50;
+  }
+
+  .help-hint kbd {
+    background: rgba(99,102,241,0.15);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    color: #a5b4fc;
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Loading Knowledge Graph...</div>
+</div>
+
+<div class="topbar">
+  <h1>🗺️ Tourism Knowledge Graph</h1>
+  <div class="stats">
+    <span>Nodes: <span class="num" id="stat-nodes">0</span></span>
+    <span>Edges: <span class="num" id="stat-edges">0</span></span>
+    <span>Types: <span class="num" id="stat-types">0</span></span>
+  </div>
+</div>
+
+<div class="controls">
+  <!-- Search -->
+  <div class="control-card">
+    <h3>Search Nodes</h3>
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Search destinations, cities...">
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+
+  <!-- Node Type Filter -->
+  <div class="control-card">
+    <h3>Node Types</h3>
+    <div class="filter-grid" id="nodeFilters"></div>
+  </div>
+
+  <!-- Edge Type Filter -->
+  <div class="control-card">
+    <h3>Relationship Types</h3>
+    <div class="edge-filter-grid" id="edgeFilters"></div>
+  </div>
+</div>
+
+<!-- Detail Panel -->
+<div class="detail-panel" id="detailPanel">
+  <button class="close-btn" onclick="closeDetail()">✕</button>
+  <div class="node-name" id="detailName"></div>
+  <div class="node-type" id="detailType"></div>
+  <div id="detailContent"></div>
+</div>
+
+<div id="graph-container"></div>
+
+<div class="help-hint">
+  <kbd>Click</kbd> node to inspect · <kbd>Scroll</kbd> to zoom · <kbd>Drag</kbd> to pan · <kbd>Double-click</kbd> to focus
+</div>
+
+<script>
+// ═══════════════════════════════════════
+// Color Palette
+// ═══════════════════════════════════════
+const TYPE_COLORS = {
+  'Destination': { bg: '#f472b6', border: '#ec4899', font: '#1a1a2e' },
+  'City':        { bg: '#60a5fa', border: '#3b82f6', font: '#1a1a2e' },
+  'State':       { bg: '#34d399', border: '#10b981', font: '#1a1a2e' },
+  'Country':     { bg: '#fbbf24', border: '#f59e0b', font: '#1a1a2e' },
+  'Continent':   { bg: '#f97316', border: '#ea580c', font: '#1a1a2e' },
+  'PlaceType':   { bg: '#a78bfa', border: '#8b5cf6', font: '#1a1a2e' },
+  'Emotion':     { bg: '#fb7185', border: '#f43f5e', font: '#1a1a2e' },
+  'Season':      { bg: '#2dd4bf', border: '#14b8a6', font: '#1a1a2e' },
+};
+
+const EDGE_COLORS = {
+  'LOCATED_IN':      '#60a5fa',
+  'BELONGS_TO':      '#34d399',
+  'PART_OF':         '#34d399',
+  'ON_CONTINENT':    '#fbbf24',
+  'HAS_TYPE':        '#a78bfa',
+  'EVOKES':          '#fb7185',
+  'BEST_VISITED_IN': '#2dd4bf',
+  'SIMILAR_TO':      '#818cf8',
+  'HAS_DESTINATION': '#f472b6',
+  'NEAR':            '#94a3b8',
+};
+
+// ═══════════════════════════════════════
+// Data Loading & Graph Building
+// ═══════════════════════════════════════
+let network = null;
+let allNodes = [];
+let allEdges = [];
+let triplesData = [];
+let nodeMap = {};  // name -> node id
+let nodeTypeMap = {}; // nodeId -> type
+let activeFilters = {};
+let activeEdgeFilters = {};
+
+async function loadData() {
+  try {
+    const resp = await fetch('extracted_triples.json');
+    triplesData = await resp.json();
+    buildGraph(triplesData);
+  } catch (e) {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:#f472b6;font-size:16px;">❌ Failed to load extracted_triples.json</div>
+       <div style="color:#64748b;font-size:13px;margin-top:8px;">Make sure graph_viewer.html is in the same folder as extracted_triples.json</div>
+       <div style="color:#64748b;font-size:12px;margin-top:4px;">Error: ${e.message}</div>`;
+  }
+}
+
+function buildGraph(triples) {
+  const nodeSet = {};
+  const edgeList = [];
+  let nodeId = 0;
+
+  // Build unique nodes
+  for (const t of triples) {
+    const sKey = `${t.subject_type}:${t.subject}`;
+    const oKey = `${t.object_type}:${t.object}`;
+
+    if (!nodeSet[sKey]) {
+      nodeSet[sKey] = { id: nodeId++, label: t.subject, type: t.subject_type };
+    }
+    if (!nodeSet[oKey]) {
+      nodeSet[oKey] = { id: nodeId++, label: t.object, type: t.object_type };
+    }
+
+    edgeList.push({
+      from: nodeSet[sKey].id,
+      to: nodeSet[oKey].id,
+      relType: t.predicate,
+    });
+  }
+
+  // Build vis.js nodes
+  const typeCounts = {};
+  const edgeTypeCounts = {};
+
+  for (const key in nodeSet) {
+    const n = nodeSet[key];
+    const colors = TYPE_COLORS[n.type] || { bg: '#64748b', border: '#475569', font: '#fff' };
+    typeCounts[n.type] = (typeCounts[n.type] || 0) + 1;
+
+    // Size by type importance
+    let size = 10;
+    if (n.type === 'Continent') size = 28;
+    else if (n.type === 'Country') size = 22;
+    else if (n.type === 'State') size = 18;
+    else if (n.type === 'City') size = 16;
+    else if (n.type === 'Destination') size = 12;
+    else if (n.type === 'Emotion') size = 20;
+    else if (n.type === 'PlaceType') size = 14;
+    else if (n.type === 'Season') size = 16;
+
+    allNodes.push({
+      id: n.id,
+      label: n.label,
+      title: `<b>${n.label}</b><br>Type: ${n.type}`,
+      group: n.type,
+      size: size,
+      font: { size: 9, color: '#c8d0e0', face: 'Inter' },
+      color: {
+        background: colors.bg,
+        border: colors.border,
+        highlight: { background: '#fff', border: colors.border },
+      },
+      borderWidth: 1.5,
+      borderWidthSelected: 3,
+      nodeType: n.type,
+    });
+
+    nodeMap[key] = n.id;
+    nodeTypeMap[n.id] = n.type;
+  }
+
+  // Build vis.js edges
+  for (const e of edgeList) {
+    const ec = EDGE_COLORS[e.relType] || '#475569';
+    edgeTypeCounts[e.relType] = (edgeTypeCounts[e.relType] || 0) + 1;
+
+    allEdges.push({
+      from: e.from,
+      to: e.to,
+      label: '',
+      title: e.relType,
+      color: { color: ec, opacity: 0.35, highlight: ec },
+      width: 0.8,
+      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+      smooth: { type: 'continuous', roundness: 0.15 },
+      relType: e.relType,
+    });
+  }
+
+  // Update stats
+  document.getElementById('stat-nodes').textContent = allNodes.length;
+  document.getElementById('stat-edges').textContent = allEdges.length;
+  document.getElementById('stat-types').textContent = Object.keys(typeCounts).length;
+
+  // Build filters
+  buildNodeFilters(typeCounts);
+  buildEdgeFilters(edgeTypeCounts);
+
+  // Render
+  renderNetwork();
+}
+
+function buildNodeFilters(typeCounts) {
+  const container = document.getElementById('nodeFilters');
+  const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+
+  for (const [type, count] of sortedTypes) {
+    activeFilters[type] = true;
+    const colors = TYPE_COLORS[type] || { bg: '#64748b' };
+
+    const label = document.createElement('label');
+    label.className = 'filter-item';
+    label.innerHTML = `
+      <input type="checkbox" checked data-type="${type}">
+      <span class="filter-dot" style="background:${colors.bg}"></span>
+      ${type}
+      <span class="filter-count">${count}</span>
+    `;
+    label.querySelector('input').addEventListener('change', (e) => {
+      activeFilters[type] = e.target.checked;
+      applyFilters();
+    });
+    container.appendChild(label);
+  }
+}
+
+function buildEdgeFilters(edgeTypeCounts) {
+  const container = document.getElementById('edgeFilters');
+  const sortedTypes = Object.entries(edgeTypeCounts).sort((a, b) => b[1] - a[1]);
+
+  for (const [type, count] of sortedTypes) {
+    activeEdgeFilters[type] = true;
+    const ec = EDGE_COLORS[type] || '#475569';
+
+    const label = document.createElement('label');
+    label.className = 'edge-filter-item';
+    label.innerHTML = `
+      <input type="checkbox" checked data-edge="${type}">
+      <span class="filter-dot" style="background:${ec}"></span>
+      ${type}
+      <span class="filter-count">${count}</span>
+    `;
+    label.querySelector('input').addEventListener('change', (e) => {
+      activeEdgeFilters[type] = e.target.checked;
+      applyFilters();
+    });
+    container.appendChild(label);
+  }
+}
+
+function applyFilters() {
+  const filteredNodes = allNodes.filter(n => activeFilters[n.nodeType]);
+  const visibleNodeIds = new Set(filteredNodes.map(n => n.id));
+
+  const filteredEdges = allEdges.filter(e =>
+    visibleNodeIds.has(e.from) &&
+    visibleNodeIds.has(e.to) &&
+    activeEdgeFilters[e.relType]
+  );
+
+  network.setData({
+    nodes: new vis.DataSet(filteredNodes),
+    edges: new vis.DataSet(filteredEdges),
+  });
+}
+
+function renderNetwork() {
+  const container = document.getElementById('graph-container');
+  const data = {
+    nodes: new vis.DataSet(allNodes),
+    edges: new vis.DataSet(allEdges),
+  };
+
+  const options = {
+    physics: {
+      enabled: true,
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -60,
+        centralGravity: 0.008,
+        springLength: 120,
+        springConstant: 0.06,
+        damping: 0.4,
+        avoidOverlap: 0.3,
+      },
+      stabilization: {
+        enabled: true,
+        iterations: 300,
+        updateInterval: 25,
+      },
+      maxVelocity: 50,
+      minVelocity: 0.5,
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      hideEdgesOnDrag: true,
+      hideEdgesOnZoom: true,
+      multiselect: false,
+      navigationButtons: false,
+      keyboard: { enabled: true },
+    },
+    nodes: {
+      shape: 'dot',
+      scaling: { min: 8, max: 30 },
+    },
+    edges: {
+      selectionWidth: 2,
+    },
+    layout: {
+      improvedLayout: false,
+    },
+  };
+
+  network = new vis.Network(container, data, options);
+
+  network.on('stabilizationProgress', (p) => {
+    const pct = Math.round((p.iterations / p.total) * 100);
+    document.querySelector('.loading-text').textContent = `Laying out graph... ${pct}%`;
+  });
+
+  network.on('stabilizationIterationsDone', () => {
+    document.getElementById('loading').classList.add('hidden');
+    network.setOptions({ physics: { enabled: false } });
+  });
+
+  network.on('click', (params) => {
+    if (params.nodes.length > 0) {
+      showNodeDetail(params.nodes[0]);
+    }
+  });
+
+  network.on('doubleClick', (params) => {
+    if (params.nodes.length > 0) {
+      network.focus(params.nodes[0], { scale: 1.5, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+    }
+  });
+}
+
+// ═══════════════════════════════════════
+// Search
+// ═══════════════════════════════════════
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  const query = e.target.value.toLowerCase().trim();
+  const results = document.getElementById('searchResults');
+  results.innerHTML = '';
+
+  if (query.length < 2) return;
+
+  const matches = allNodes
+    .filter(n => n.label.toLowerCase().includes(query))
+    .slice(0, 20);
+
+  for (const m of matches) {
+    const colors = TYPE_COLORS[m.nodeType] || { bg: '#64748b' };
+    const item = document.createElement('div');
+    item.className = 'search-item';
+    item.innerHTML = `
+      <span>${m.label}</span>
+      <span class="type-badge" style="background:${colors.bg}20;color:${colors.bg}">${m.nodeType}</span>
+    `;
+    item.addEventListener('click', () => {
+      network.selectNodes([m.id]);
+      network.focus(m.id, { scale: 1.2, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+      showNodeDetail(m.id);
+      results.innerHTML = '';
+      document.getElementById('searchInput').value = m.label;
+    });
+    results.appendChild(item);
+  }
+});
+
+// ═══════════════════════════════════════
+// Node Detail
+// ═══════════════════════════════════════
+function showNodeDetail(nodeId) {
+  const node = allNodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  const panel = document.getElementById('detailPanel');
+  const colors = TYPE_COLORS[node.nodeType] || { bg: '#64748b' };
+
+  document.getElementById('detailName').textContent = node.label;
+  const typeEl = document.getElementById('detailType');
+  typeEl.textContent = node.nodeType;
+  typeEl.style.background = colors.bg + '25';
+  typeEl.style.color = colors.bg;
+
+  // Find relationships
+  const outgoing = [];
+  const incoming = [];
+
+  for (const e of allEdges) {
+    if (e.from === nodeId) {
+      const target = allNodes.find(n => n.id === e.to);
+      if (target) outgoing.push({ rel: e.relType, node: target });
+    }
+    if (e.to === nodeId) {
+      const source = allNodes.find(n => n.id === e.from);
+      if (source) incoming.push({ rel: e.relType, node: source });
+    }
+  }
+
+  let html = '';
+
+  if (outgoing.length > 0) {
+    html += `<div class="detail-section"><h4>Outgoing (${outgoing.length})</h4>`;
+    for (const r of outgoing) {
+      const tc = TYPE_COLORS[r.node.nodeType] || { bg: '#64748b' };
+      html += `
+        <div class="detail-rel" onclick="focusNode(${r.node.id})">
+          <span class="rel-type">${r.rel}</span>
+          <span style="color:${tc.bg}">${r.node.label}</span>
+        </div>
+      `;
+    }
+    html += '</div>';
+  }
+
+  if (incoming.length > 0) {
+    html += `<div class="detail-section"><h4>Incoming (${incoming.length})</h4>`;
+    for (const r of incoming) {
+      const tc = TYPE_COLORS[r.node.nodeType] || { bg: '#64748b' };
+      html += `
+        <div class="detail-rel" onclick="focusNode(${r.node.id})">
+          <span class="rel-type">${r.rel}</span>
+          <span style="color:${tc.bg}">${r.node.label}</span>
+        </div>
+      `;
+    }
+    html += '</div>';
+  }
+
+  if (outgoing.length === 0 && incoming.length === 0) {
+    html = '<div style="color:#64748b;font-size:12px;">No relationships visible with current filters.</div>';
+  }
+
+  document.getElementById('detailContent').innerHTML = html;
+  panel.classList.add('visible');
+}
+
+function focusNode(nodeId) {
+  network.selectNodes([nodeId]);
+  network.focus(nodeId, { scale: 1.2, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+  showNodeDetail(nodeId);
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('visible');
+}
+
+// ═══════════════════════════════════════
+// Init
+// ═══════════════════════════════════════
+loadData();
+</script>
+</body>
+</html>

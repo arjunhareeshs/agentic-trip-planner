@@ -1,0 +1,72 @@
+======================================================================
+  RAG EVALUATION REPORT
+  Date:     2026-02-23 14:30:35
+  Queries:  5
+  K values: [3, 5, 10]
+  Runtime:  3.2s
+======================================================================
+
+--- AGGREGATE (macro-average over all queries) ---
+
+  Recall@3     0.0000
+  Recall@5     0.0000
+  Recall@10    0.0000
+
+  Prec@3       0.0000
+  Prec@5       0.0000
+  Prec@10      0.0000
+
+  MRR          0.0000
+
+  NDCG@3       0.0000
+  NDCG@5       0.0000
+  NDCG@10      0.0000
+
+--- PER-QUERY RESULTS ---
+
+  Query 1: Show me beautiful lake views in Udaipur at sunset
+    Retrieved: 0 nodes
+    Relevant:  0 ground truth
+    Matched:   0 hits
+    R@3=0.000  P@3=0.000  NDCG@3=0.000
+    R@5=0.000  P@5=0.000  NDCG@5=0.000
+    R@10=0.000  P@10=0.000  NDCG@10=0.000
+    MRR=0.000
+
+  Query 2: Best heritage forts and palaces in Jaipur
+    Retrieved: 0 nodes
+    Relevant:  0 ground truth
+    Matched:   0 hits
+    R@3=0.000  P@3=0.000  NDCG@3=0.000
+    R@5=0.000  P@5=0.000  NDCG@5=0.000
+    R@10=0.000  P@10=0.000  NDCG@10=0.000
+    MRR=0.000
+
+  Query 3: Peaceful beaches in Goa without crowds
+    Retrieved: 0 nodes
+    Relevant:  0 ground truth
+    Matched:   0 hits
+    R@3=0.000  P@3=0.000  NDCG@3=0.000
+    R@5=0.000  P@5=0.000  NDCG@5=0.000
+    R@10=0.000  P@10=0.000  NDCG@10=0.000
+    MRR=0.000
+
+  Query 4: Spiritual temples to visit in Varanasi
+    Retrieved: 0 nodes
+    Relevant:  0 ground truth
+    Matched:   0 hits
+    R@3=0.000  P@3=0.000  NDCG@3=0.000
+    R@5=0.000  P@5=0.000  NDCG@5=0.000
+    R@10=0.000  P@10=0.000  NDCG@10=0.000
+    MRR=0.000
+
+  Query 5: Mountain trekking routes in Manali
+    Retrieved: 0 nodes
+    Relevant:  0 ground truth
+    Matched:   0 hits
+    R@3=0.000  P@3=0.000  NDCG@3=0.000
+    R@5=0.000  P@5=0.000  NDCG@5=0.000
+    R@10=0.000  P@10=0.000  NDCG@10=0.000
+    MRR=0.000
+
+======================================================================

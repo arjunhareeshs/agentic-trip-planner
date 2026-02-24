@@ -1,0 +1,12 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd \"C:\\\\agentic ai\\\\agent-trip-planner\\\\server\\\\src\"; python -c \"\nimport google\\.adk\\.models as m\nprint\\('models:', \\[x for x in dir\\(m\\) if not x\\.startswith\\('_'\\)\\]\\)\n\nfrom google\\.adk\\.tools\\.base_tool import BaseTool\nfrom google\\.adk\\.tools\\.tool_context import ToolContext\nimport inspect\ntc_props = \\[name for name, obj in inspect\\.getmembers\\(ToolContext\\)\n            if isinstance\\(obj, property\\)\\]\nprint\\('ToolContext props:', tc_props\\)\ntc_methods = \\[name for name, obj in inspect\\.getmembers\\(ToolContext, predicate=inspect\\.isfunction\\)\n              if not name\\.startswith\\('_'\\)\\]\nprint\\('ToolContext methods:', tc_methods\\)\n\n# Look at session\\.events or session structure\nfrom google\\.adk\\.sessions import Session\nsess_fields = Session\\.model_fields\nprint\\('Session model fields:', list\\(sess_fields\\.keys\\(\\)\\)\\)\n\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd \"c:\\\\agentic ai\\\\agent-trip-planner\\\\server\\\\src\" ; conda run -p C:\\\\Users\\\\hp\\\\anaconda3 --no-capture-output python -c \"\nfrom agents\\.memory\\.context_manager import \\(\n    before_model_callback,\n    after_root_agent_callback,\n    after_subagent_callback,\n    before_tool_callback,\n    after_tool_callback,\n\\)\nprint\\('context_manager OK'\\)\n\nfrom agents\\.memory import memory_service, session_service\nprint\\('services OK'\\)\n\nfrom agents\\.agent import root_agent\nprint\\('Root agent OK'\\)\nprint\\('Name:', root_agent\\.name\\)\nprint\\('Tools:', \\[t\\.name for t in root_agent\\.tools\\]\\)\nprint\\('Sub-agents:', \\[a\\.name for a in root_agent\\.sub_agents\\]\\)\nprint\\('before_model_callbacks:', root_agent\\.before_model_callbacks\\)\nprint\\('after_agent_callbacks:', root_agent\\.after_agent_callbacks\\)\nprint\\('before_tool_callbacks:', root_agent\\.before_tool_callbacks\\)\nprint\\('after_tool_callbacks:', root_agent\\.after_tool_callbacks\\)\n\"\n$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

@@ -1,0 +1,5 @@
+# Server dependencies (in addition to ADK and agent dependencies)
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.18
+python-dotenv>=1.0.1
