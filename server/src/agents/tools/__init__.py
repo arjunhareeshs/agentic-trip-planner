@@ -61,6 +61,11 @@
 #       data locally via Ollama 120b using LLMExtractionStrategy. 
 #       Use to extract reviews, exact offers, and specific content from URLs.
 #
+#   scrape_page(url: str) -> str                            [web_scraper.py]
+#       FAST page scraper — fetches the page as markdown via visible Chromium.
+#       No LLM extraction step, just returns raw page text. The agent can
+#       read and summarise the content itself. Much faster than extract_web_content.
+#
 #   deep_web_scrape(url: str, prompt: str) -> str        [web_scraper.py]
 #       Advanced adaptive multi-page crawler. Provide a URL and a prompt
 #       (e.g., "Find bookings or reviews"). Navigates deep into a site via local

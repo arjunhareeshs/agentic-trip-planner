@@ -56,10 +56,45 @@ async def process_voice(
             stt_text = stt_data["results"]["channels"][0]["alternatives"][0]["transcript"]
             
             if not stt_text.strip():
-                raise HTTPException(status_code=400, detail="Could not transcribe audio.")
+                # Instead of failing, return a gentle "didn't catch that" audio response
+                stt_text = ""
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Deepgram STT error")
         raise HTTPException(status_code=500, detail=f"STT Error: {str(e)}")
+
+    # If no speech was detected, return a short TTS saying so
+    if not stt_text.strip():
+        logger.info("Empty transcript — returning 'didn't catch that' audio")
+        try:
+            async with httpx.AsyncClient() as client:
+                tts_response = await client.post(
+                    "https://api.deepgram.com/v1/speak?model=aura-asteria-en",
+                    headers={
+                        "Authorization": f"Token {DEEPGRAM_TTS_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"text": "I didn't catch that. Could you say it again?"},
+                    timeout=30.0,
+                )
+                tts_response.raise_for_status()
+                audio_bytes = tts_response.content
+        except Exception:
+            raise HTTPException(status_code=500, detail="TTS Error for fallback")
+
+        actual_session_id = session_id or str(uuid.uuid4())
+        headers = {
+            "X-User-Transcript": "",
+            "X-Bot-Response": "I didn't catch that. Could you say it again?",
+            "X-Session-Id": actual_session_id,
+            "Access-Control-Expose-Headers": "X-User-Transcript, X-Bot-Response, X-Session-Id",
+        }
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers=headers,
+        )
 
     logger.info(f"User voice transcribed as: {stt_text}")
 

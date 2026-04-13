@@ -1,0 +1,3 @@
+name: sub_agent_3
+agent_class: LoopAgent
+sub_agents: []

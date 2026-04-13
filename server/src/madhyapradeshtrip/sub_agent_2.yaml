@@ -1,0 +1,4 @@
+name: sub_agent_2
+agent_class: ParallelAgent
+sub_agents:
+  - config_path: ./sub_agent_3.yaml

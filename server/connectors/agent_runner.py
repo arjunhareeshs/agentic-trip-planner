@@ -111,33 +111,110 @@ _TOOL_CALL_PATTERNS = [
     re.compile(r'<tool_call>', re.IGNORECASE),
 ]
 
+# Tool / agent names that should never appear in user-visible text
+_INTERNAL_NAMES = [
+    "web_search", "scrape_page", "extract_web_content", "deep_web_scrape",
+    "search_place_images", "get_weather_forecast", "geocode",
+    "match_destinations", "filter_destinations", "get_destination_details",
+    "list_all_destinations", "get_graph_stats",
+    "preference_agent", "itinerary_agent", "booking_agent",
+    "image_analysis_agent", "web_automation_agent",
+    "trip_planner_orchestrator",
+]
+
 
 def _clean_tool_call_text(text: str) -> str:
     """Remove tool call parameters, function call JSON, and other internal content from text."""
-    # Check if entire text looks like a tool call JSON blob
+    if not text or not text.strip():
+        return ""
+
     stripped = text.strip()
+
+    # 1) If the entire text is a JSON object with tool-call keys, skip it
     if stripped.startswith('{') and stripped.endswith('}'):
         try:
             parsed = json.loads(stripped)
-            # If it's a function_call or tool params dict, skip it entirely
             if any(k in parsed for k in ('function_call', 'name', 'tool_name', 'args', 'parameters')):
                 return ""
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # Remove lines matching tool call patterns
+    # 2) Check if any tool-call pattern matches the entire chunk → skip the whole thing
     for pattern in _TOOL_CALL_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(stripped):
             return ""
 
-    # Remove ```tool_code ... ``` blocks
+    # 3) Remove ```json ... ``` / ```tool_code ... ``` / ``` ... ``` code blocks containing tool params
+    text = re.sub(
+        r'```(?:json|tool_code|python|)\s*\n?\s*\{[^`]*?\}\s*\n?\s*```',
+        '', text, flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # 4) Remove ```tool_code ... ``` blocks (any content)
     text = re.sub(r'```tool_code.*?```', '', text, flags=re.DOTALL)
-    # Remove <function_call>...</function_call> blocks
+
+    # 5) Remove <function_call>...</function_call> and <tool_call>...</tool_call>
     text = re.sub(r'<function_call>.*?</function_call>', '', text, flags=re.DOTALL)
-    # Remove <tool_call>...</tool_call> blocks
     text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.DOTALL)
 
-    return text
+    # 6) Remove bare JSON blocks that look like tool calls (even without code fences)
+    text = re.sub(
+        r'\{\s*"(?:name|function_call|tool_name|tool_call)"\s*:.*?\}(?:\s*\})?',
+        '', text, flags=re.DOTALL,
+    )
+
+    # 6b) Remove empty code block markers (leftover after removing JSON content)
+    text = re.sub(r'```(?:json|tool_code|python|)\s*```', '', text, flags=re.IGNORECASE)
+    # Also catch lone backtick fences with nothing between them
+    text = re.sub(r'`{3,}\s*`{3,}', '', text)
+    # And single lone backtick pairs with only whitespace
+    text = re.sub(r'`\s*`', '', text)
+
+    # 7) Remove lines that reference internal tool/agent names directly
+    #    e.g., "Let me call web_search..." or "I'll use extract_web_content..."
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        lower = line.lower().strip()
+
+        # Skip empty backtick-only lines
+        if re.match(r'^`+$', lower):
+            continue
+
+        # Skip lines that narrate tool usage
+        if any(name in lower for name in _INTERNAL_NAMES):
+            narration_signals = [
+                'let me', "i'll", 'i will', 'calling', 'using', 'invoke',
+                'delegate', 'transfer', 'pass to', 'send to', 'call ',
+                'searching', 'scraping', 'extracting', 'fetching',
+                'start by', 'going to', 'need to',
+            ]
+            if any(sig in lower for sig in narration_signals):
+                continue
+
+        # Skip general process-narration lines (even without tool names)
+        process_narration = [
+            "let me search", "let me scrape", "let me extract",
+            "let me look up", "let me find", "let me check",
+            "i'll start by searching", "i'll search for",
+            "i'll scrape", "i'll extract", "i'll look up",
+            "i notice the web extraction didn't work",
+            "the tool returned", "the search returned",
+            "based on my search results", "from the search results",
+            "here are the search results",
+            "i'll use", "let me use", "i need to call",
+        ]
+        if any(phrase in lower for phrase in process_narration):
+            continue
+
+        cleaned_lines.append(line)
+
+    text = '\n'.join(cleaned_lines)
+
+    # 8) Collapse excessive blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
 
 
 def _extract_place_name(text: str) -> str | None:

@@ -63,6 +63,9 @@ export default function VibeResultPage() {
   ]);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
+  // Track inline image URLs already synced to gallery (prevents re-render loops)
+  const syncedImageUrls = useRef<Set<string>>(new Set());
+
   // Agent activity debug state
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([]);
 
@@ -84,6 +87,8 @@ export default function VibeResultPage() {
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const noiseFloorRef = useRef<number>(0);         // Calibrated ambient noise level
+  const showVoiceModalRef = useRef(false);          // Non-stale ref for async callbacks
 
   // ── Effects ───────────────────────────────────────────────────────────
 
@@ -266,7 +271,7 @@ export default function VibeResultPage() {
               ...updated[idx],
               text: isConnected
                 ? `Connection error: ${err.message}. Please try again.`
-                : "Backend is not connected. Please start the server with: uvicorn main:app --reload --port 8000",
+                : "Backend is not connected. Please start the server with: uvicorn main:app --reload --port 8005",
             };
           }
           return updated;
@@ -438,7 +443,13 @@ export default function VibeResultPage() {
   const startVoiceActivity = async () => {
     try {
       setVoiceStatus("listening");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = stream;
 
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -446,43 +457,115 @@ export default function VibeResultPage() {
 
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.8;
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.3;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
+      const bufferLength = analyser.fftSize;
+      const timeDomainData = new Float32Array(bufferLength);
 
-      // Volume meter & Silence detection
+      const getRMS = (): number => {
+        analyser.getFloatTimeDomainData(timeDomainData);
+        let sumSq = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sumSq += timeDomainData[i] * timeDomainData[i];
+        }
+        return Math.sqrt(sumSq / bufferLength);
+      };
+
+      // ── Noise floor calibration (~500ms) ─────────────────────────
+      const calibrationSamples: number[] = [];
+      await new Promise<void>((resolve) => {
+        const calInterval = setInterval(() => {
+          calibrationSamples.push(getRMS());
+          if (calibrationSamples.length >= 10) {
+            clearInterval(calInterval);
+            resolve();
+          }
+        }, 50);
+      });
+      const avgNoise = calibrationSamples.reduce((a, b) => a + b, 0) / calibrationSamples.length;
+      noiseFloorRef.current = avgNoise;
+
+      const SPEECH_THRESHOLD = Math.max(avgNoise * 2.5, avgNoise + 0.006, 0.006);
+      const SPEECH_FRAMES_NEEDED = 3;     // 150ms to confirm speech start
+      const SILENCE_AFTER_SPEECH_MS = 1200; // 1.2s since LAST loud frame → stop
+      const MAX_RECORD_MS = 30000;
+      const NO_SPEECH_TIMEOUT_MS = 10000; // 10s with zero speech → restart
+
+      console.log(
+        `[VAD] Calibrated — noise: ${avgNoise.toFixed(5)}, threshold: ${SPEECH_THRESHOLD.toFixed(5)}`
+      );
+
+      // ── Timestamp-based VAD (immune to single noise spikes) ──────
       let isSpeaking = false;
-      const SILENCE_THRESHOLD = 5; // Minimal volume threshold
-      const SILENCE_DURATION_MS = 1500; // ~1.5 seconds of silence means stop
+      let speechFrames = 0;            // pre-speech confirmation counter
+      let lastAboveThresholdTime = 0;  // timestamp of last loud frame
+      let speechStartTime = 0;
+      const listenStartTime = Date.now();
 
       volumeIntervalRef.current = setInterval(() => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-        setAudioLevel(average);
+        const rms = getRMS();
+        const normalizedLevel = Math.min(100, (rms / Math.max(SPEECH_THRESHOLD * 2, 0.02)) * 50);
+        setAudioLevel(normalizedLevel);
 
-        if (average > SILENCE_THRESHOLD) {
-          if (!isSpeaking) isSpeaking = true;
-          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        } else if (isSpeaking) {
-          if (!silenceTimerRef.current) {
-            silenceTimerRef.current = setTimeout(() => {
-              isSpeaking = false;
-              stopRecordingAndProcess();
-            }, SILENCE_DURATION_MS);
+        if (rms > SPEECH_THRESHOLD) {
+          lastAboveThresholdTime = Date.now();
+
+          if (!isSpeaking) {
+            speechFrames++;
+            if (speechFrames >= SPEECH_FRAMES_NEEDED) {
+              isSpeaking = true;
+              speechStartTime = Date.now();
+              console.log(`[VAD] Speech confirmed (RMS: ${rms.toFixed(5)})`);
+            }
           }
+        } else {
+          // Reset pre-speech counter (we only need consecutive frames to START)
+          if (!isSpeaking) {
+            speechFrames = 0;
+          }
+          // Note: we do NOT reset lastAboveThresholdTime here.
+          // A single noise spike just moves the deadline forward by ~50ms,
+          // it doesn't reset a 1.2s counter like the old frame-counting did.
+        }
+
+        // ── Silence detection (timestamp-based, not frame-counting) ──
+        // Once speaking, if enough time has passed since the LAST loud frame, stop.
+        // This is robust: a random noise spike at T just moves deadline to T + 1200ms.
+        // With frame-counting, a spike at frame 24/25 reset the entire 1.25s counter.
+        if (isSpeaking && Date.now() - lastAboveThresholdTime > SILENCE_AFTER_SPEECH_MS) {
+          console.log("[VAD] Silence confirmed → processing");
+          isSpeaking = false;
+          stopRecordingAndProcess();
+          return;
+        }
+
+        // No-speech timeout → restart listener
+        if (!isSpeaking && Date.now() - listenStartTime > NO_SPEECH_TIMEOUT_MS) {
+          console.log("[VAD] No speech detected — restarting");
+          if (volumeIntervalRef.current) {
+            clearInterval(volumeIntervalRef.current);
+            volumeIntervalRef.current = null;
+          }
+          stopVoiceActivity();
+          if (showVoiceModalRef.current) {
+            startVoiceActivity();
+          }
+          return;
+        }
+
+        // Max duration safety
+        if (isSpeaking && Date.now() - speechStartTime > MAX_RECORD_MS) {
+          console.log("[VAD] Max duration → processing");
+          isSpeaking = false;
+          stopRecordingAndProcess();
         }
       }, 50);
 
-      // Setup MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      // ── Setup MediaRecorder ──────────────────────────────────────
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -492,17 +575,24 @@ export default function VibeResultPage() {
         }
       };
 
-      mediaRecorder.start(200); // chunk every 200ms
+      mediaRecorder.start(200);
     } catch (err) {
       console.error("Error accessing microphone:", err);
       setVoiceStatus("idle");
       setShowVoiceModal(false);
+      showVoiceModalRef.current = false;
     }
   };
 
   const stopVoiceActivity = () => {
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (volumeIntervalRef.current) {
+      clearInterval(volumeIntervalRef.current);
+      volumeIntervalRef.current = null;
+    }
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
@@ -519,26 +609,57 @@ export default function VibeResultPage() {
     }
   };
 
+  const restartListeningIfOpen = () => {
+    if (showVoiceModalRef.current) {
+      setVoiceStatus("listening");
+      startVoiceActivity();
+    } else {
+      setVoiceStatus("idle");
+    }
+  };
+
   const stopRecordingAndProcess = async () => {
-    stopVoiceActivity();
+    // Stop the VAD interval first (prevent re-entry)
+    if (volumeIntervalRef.current) {
+      clearInterval(volumeIntervalRef.current);
+      volumeIntervalRef.current = null;
+    }
     setVoiceStatus("processing");
     setAudioLevel(0);
 
-    // Give the recorder a tiny bit of time to finalize chunks
-    setTimeout(async () => {
+    const recorder = mediaRecorderRef.current;
+
+    // If no recorder or already stopped, restart
+    if (!recorder || recorder.state === "inactive") {
+      stopVoiceActivity();
+      restartListeningIfOpen();
+      return;
+    }
+
+    // Use onstop event to guarantee all chunks are flushed
+    recorder.onstop = async () => {
+      // Clean up stream & audio context
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close().catch(() => { });
+        audioContextRef.current = null;
+      }
+
       if (audioChunksRef.current.length === 0) {
-        setVoiceStatus("listening");
-        startVoiceActivity(); // Restart if nothing recorded
+        console.log("[Voice] No audio chunks — restarting");
+        restartListeningIfOpen();
         return;
       }
 
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
       audioChunksRef.current = [];
 
       try {
         const result = await processVoice(audioBlob, sessionId);
 
-        // Update chat visually
         if (result.transcript) {
           const userMsg: ChatMessage = {
             id: Date.now().toString(),
@@ -561,36 +682,67 @@ export default function VibeResultPage() {
 
         if (result.sessionId) setSessionId(result.sessionId);
 
-        // Play the TTS audio response
-        setVoiceStatus("speaking");
-        const audioUrl = URL.createObjectURL(result.audio);
-        const audio = new Audio(audioUrl);
-        audioElementRef.current = audio;
+        // Play TTS audio
+        if (result.audio && result.audio.size > 0) {
+          setVoiceStatus("speaking");
+          const audioUrl = URL.createObjectURL(result.audio);
+          const audio = new Audio(audioUrl);
+          audioElementRef.current = audio;
 
-        audio.onended = () => {
-          URL.revokeObjectURL(audioUrl);
-          // Loop back to listening when done speaking, unless user closed modal
-          if (showVoiceModal) {
-            setVoiceStatus("listening");
-            startVoiceActivity();
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            restartListeningIfOpen();
+          };
+
+          // If audio fails to load/play, don't get stuck — restart listening
+          audio.onerror = () => {
+            console.error("[Voice] Audio playback error");
+            URL.revokeObjectURL(audioUrl);
+            restartListeningIfOpen();
+          };
+
+          try {
+            await audio.play();
+          } catch (playErr) {
+            console.error("[Voice] Audio play rejected:", playErr);
+            URL.revokeObjectURL(audioUrl);
+            restartListeningIfOpen();
           }
-        };
-
-        await audio.play();
-      } catch (err) {
+        } else {
+          // No audio in response — go back to listening
+          console.log("[Voice] No audio in response");
+          restartListeningIfOpen();
+        }
+      } catch (err: any) {
         console.error("Voice processing error:", err);
-        setVoiceStatus("idle");
+        // Show "didn't catch that" as a bot message so user gets feedback
+        if (err?.message?.includes("400")) {
+          const hintMsg: ChatMessage = {
+            id: Date.now().toString(),
+            text: "I didn't catch that. Could you say it again?",
+            sender: "bot",
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, hintMsg]);
+        }
+        // Always restart listening — never get stuck
+        restartListeningIfOpen();
       }
-    }, 100);
+    };
+
+    // Trigger stop — fires one final dataavailable, then onstop
+    recorder.stop();
   };
 
   const handleVoiceModalOpen = () => {
     setShowVoiceModal(true);
+    showVoiceModalRef.current = true;
     startVoiceActivity();
   };
 
   const handleVoiceModalClose = () => {
     setShowVoiceModal(false);
+    showVoiceModalRef.current = false;
     setVoiceStatus("idle");
     stopVoiceActivity();
     if (audioElementRef.current) {
@@ -602,40 +754,79 @@ export default function VibeResultPage() {
   // ── Clean tool-call / internal text from bot messages ──────────────────
 
   const cleanBotText = (text: string): string => {
-    // Remove tool call JSON blocks
-    let cleaned = text.replace(/```tool_code[\s\S]*?```/g, "");
+    // 1) Remove ```json { ... } ``` code blocks that contain tool params
+    let cleaned = text.replace(/```(?:json|tool_code|python|)\s*\n?\s*\{[\s\S]*?\}\s*\n?\s*```/gi, "");
+
+    // 2) Remove XML-style tool call wrappers
     cleaned = cleaned.replace(/<function_call>[\s\S]*?<\/function_call>/g, "");
     cleaned = cleaned.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "");
 
-    // Remove lines that look like tool call params
-    const toolPatterns = [
-      /^\s*\{\s*"function_call"/m,
-      /^\s*\{\s*"name"\s*:\s*"\w+"\s*,\s*"args"\s*:/m,
-      /^\s*\{\s*"tool_name"\s*:/m,
-      /^Tool call:\s*\w+/im,
-      /^Calling tool:\s*\w+/im,
-      /^Function call:\s*\w+/im,
-      /^Parameters:\s*\{/im,
-      /^\s*\{\s*"query"/m,
-      /^\s*\{\s*"keyword"/m,
-    ];
-
-    // Remove JSON-like blocks that are tool params
+    // 3) Remove bare JSON blocks that look like tool params
     cleaned = cleaned.replace(
-      /\{[\s\S]*?"(?:function_call|name|tool_name|args|parameters)"[\s\S]*?\}/g,
+      /\{\s*"(?:function_call|name|tool_name|tool_call|args|parameters|query|keyword|url|prompt)"[\s\S]*?\}(?:\s*\})?/g,
       ""
     );
 
-    // Remove lines matching tool patterns
+    // 3b) Remove empty code block markers (leftover after stripping JSON)
+    cleaned = cleaned.replace(/```(?:json|tool_code|python|)\s*```/gi, "");
+    cleaned = cleaned.replace(/`{3,}\s*`{3,}/g, "");
+    cleaned = cleaned.replace(/`\s*`/g, "");
+
+    // 4) Filter out lines that narrate tool usage or reference internal names
+    const internalNames = [
+      "web_search", "scrape_page", "extract_web_content", "deep_web_scrape",
+      "search_place_images", "get_weather_forecast", "geocode",
+      "match_destinations", "filter_destinations", "get_destination_details",
+      "list_all_destinations", "get_graph_stats",
+      "preference_agent", "itinerary_agent", "booking_agent",
+      "image_analysis_agent", "web_automation_agent",
+      "trip_planner_orchestrator",
+    ];
+    const narrationSignals = [
+      "let me", "i'll", "i will", "calling", "using", "invoke",
+      "delegate", "transfer", "pass to", "send to", "call ",
+      "searching for", "scraping", "extracting", "fetching",
+      "start by", "going to", "need to",
+    ];
+    const processNarration = [
+      "let me search", "let me scrape", "let me extract",
+      "let me look up", "let me find", "let me check",
+      "i'll start by searching", "i'll search for",
+      "i'll scrape", "i'll extract", "i'll look up",
+      "i notice the web extraction didn't work",
+      "the tool returned", "the search returned",
+      "based on my search results", "from the search results",
+      "here are the search results",
+      "i'll use", "let me use", "i need to call",
+    ];
+
+    const toolRefPattern = /^\s*\{\s*"(?:function_call|name|tool_name|query|keyword)/m;
+    const toolCallLabel = /^(?:Tool call|Calling tool|Function call|Parameters):\s*/im;
+
     const lines = cleaned.split("\n");
     const filteredLines = lines.filter((line) => {
       const trimmed = line.trim();
-      // Skip empty-ish lines resulting from removal
       if (!trimmed) return true;
-      // Skip tool call pattern lines
-      for (const pattern of toolPatterns) {
-        if (pattern.test(trimmed)) return false;
+
+      // Skip lone backtick lines
+      if (/^`+$/.test(trimmed)) return false;
+
+      // Skip lines that are bare tool-call-like JSON
+      if (toolRefPattern.test(trimmed)) return false;
+      if (toolCallLabel.test(trimmed)) return false;
+
+      const lower = trimmed.toLowerCase();
+
+      // Skip general process narration (even without tool name)
+      if (processNarration.some((p) => lower.includes(p))) return false;
+
+      // Skip narration lines referencing internal tool/agent names
+      const hasInternalRef = internalNames.some((n) => lower.includes(n));
+      if (hasInternalRef) {
+        const isNarration = narrationSignals.some((s) => lower.includes(s));
+        if (isNarration) return false;
       }
+
       return true;
     });
 
@@ -647,21 +838,34 @@ export default function VibeResultPage() {
   const renderMessageContent = (msg: ChatMessage) => {
     const rawText = msg.sender === "bot" ? cleanBotText(msg.text) : msg.text;
 
-    // Extract all inline images from markdown syntax
+    // Extract all inline images from markdown syntax (deduplicated)
     const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    const seenUrls = new Set<string>();
     const inlineImages: { alt: string; url: string }[] = [];
     let imgMatch;
     while ((imgMatch = imgRegex.exec(rawText)) !== null) {
-      inlineImages.push({ alt: imgMatch[1], url: imgMatch[2] });
       const imgUrl = imgMatch[2];
       const imgAlt = imgMatch[1];
-      // Add inline images to the gallery
-      setTimeout(() => {
-        setGalleryImages((prev) => {
-          if (prev.some((i) => i.image_url === imgUrl)) return prev;
-          return [...prev, { title: imgAlt || "Image", image_url: imgUrl, source_url: "" }];
-        });
-      }, 0);
+      // Skip duplicates within the same message
+      if (seenUrls.has(imgUrl)) continue;
+      seenUrls.add(imgUrl);
+      inlineImages.push({ alt: imgAlt, url: imgUrl });
+    }
+    // Sync unique inline images to gallery (skip already-synced URLs to prevent re-render loops)
+    if (inlineImages.length > 0) {
+      const unsyncedImages = inlineImages.filter((img) => !syncedImageUrls.current.has(img.url));
+      if (unsyncedImages.length > 0) {
+        unsyncedImages.forEach((img) => syncedImageUrls.current.add(img.url));
+        setTimeout(() => {
+          setGalleryImages((prev) => {
+            const existingUrls = new Set(prev.map((i) => i.image_url));
+            const newImages = unsyncedImages
+              .filter((img) => !existingUrls.has(img.url))
+              .map((img) => ({ title: img.alt || "Image", image_url: img.url, source_url: "" }));
+            return newImages.length > 0 ? [...prev, ...newImages] : prev;
+          });
+        }, 0);
+      }
     }
 
     // Remove markdown image syntax from text for clean rendering
@@ -902,7 +1106,13 @@ export default function VibeResultPage() {
                   loading="lazy"
                   onClick={() => setLightboxImage(img.url)}
                   onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
+                    const el = e.target as HTMLImageElement;
+                    if (!el.dataset.retried) {
+                      el.dataset.retried = "1";
+                      el.src = `https://wsrv.nl/?url=${encodeURIComponent(img.url)}&w=400&output=jpg`;
+                    } else {
+                      el.closest("[class*='rounded-lg']")?.classList.add("hidden");
+                    }
                   }}
                 />
                 {img.alt && (
@@ -1164,8 +1374,15 @@ export default function VibeResultPage() {
                       alt={img.title || `Gallery ${i + 1}`}
                       loading="lazy"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "https://lh3.googleusercontent.com/aida-public/AB6AXuCc6nD11fKeq4FNV2lU7_8VhVcD8ZRNVBfPnjXUgK_rq-dZtnEFVHNcITIEjLmU_WbgIsm9JBIOZu2ocUlaPkSdetKlaRr1Ub0coCLt85ihckt4WqbHZuNiajOFuXS-nD-6Aq4C3zbjNbMxiztBzKBJoVDG2Ai5aAuTEPJWJ0WaYMLTNa5l0JQSI-sxM8AF3gAOSwFJYPZgeQiY3wV4yxRV36YrsgJQnF5To6KnhjKUfAhWpZQXCeksEriX1keyszqjaNGbFErEzMc";
+                        const el = e.target as HTMLImageElement;
+                        if (!el.dataset.retried) {
+                          // Try image proxy as first fallback
+                          el.dataset.retried = "1";
+                          el.src = `https://wsrv.nl/?url=${encodeURIComponent(img.image_url)}&w=400&output=jpg`;
+                        } else {
+                          // Hide broken image entirely
+                          el.closest("[class*='aspect-square']")?.classList.add("hidden");
+                        }
                       }}
                     />
                     <div
@@ -1194,23 +1411,35 @@ export default function VibeResultPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8"
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8"
             onClick={() => setLightboxImage(null)}
           >
             <button
               onClick={() => setLightboxImage(null)}
-              className="absolute top-6 right-6 text-white/60 hover:text-white transition-colors"
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10 bg-black/50 hover:bg-black/80 rounded-full p-2 text-white/70 hover:text-white transition-all"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
             <motion.img
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
               src={lightboxImage}
               alt="Full view"
-              className="max-w-full max-h-full object-contain rounded-lg"
+              className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl shadow-2xl"
               onClick={(e) => e.stopPropagation()}
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                // Try proxying through a different path or show placeholder
+                if (!img.dataset.retried) {
+                  img.dataset.retried = "1";
+                  img.src = `https://wsrv.nl/?url=${encodeURIComponent(lightboxImage)}&w=1200&output=jpg`;
+                } else {
+                  // Show error state — close lightbox since image is truly broken
+                  setLightboxImage(null);
+                }
+              }}
             />
           </motion.div>
         )}
@@ -1250,12 +1479,18 @@ export default function VibeResultPage() {
                   </>
                 )}
 
-                {/* Central Button/Visualizer */}
-                <div
-                  className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 ${voiceStatus === "listening" ? "bg-emerald-500/20 border-2 border-emerald-400" :
-                    voiceStatus === "processing" ? "bg-amber-500/20 border-2 border-amber-400" :
-                      voiceStatus === "speaking" ? "bg-blue-500/20 border-2 border-blue-400" :
-                        "bg-zinc-800 border-2 border-zinc-600"
+                {/* Central Button/Visualizer — clickable during listening to manually stop */}
+                <button
+                  onClick={() => {
+                    if (voiceStatus === "listening") {
+                      stopRecordingAndProcess();
+                    }
+                  }}
+                  disabled={voiceStatus !== "listening"}
+                  className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 ${voiceStatus === "listening" ? "bg-emerald-500/20 border-2 border-emerald-400 cursor-pointer hover:bg-emerald-500/30" :
+                    voiceStatus === "processing" ? "bg-amber-500/20 border-2 border-amber-400 cursor-default" :
+                      voiceStatus === "speaking" ? "bg-blue-500/20 border-2 border-blue-400 cursor-default" :
+                        "bg-zinc-800 border-2 border-zinc-600 cursor-default"
                     }`}
                   style={{
                     transform: voiceStatus === "listening" ? `scale(${1 + Math.min(audioLevel / 100, 0.2)})` : 'scale(1)'
@@ -1283,7 +1518,7 @@ export default function VibeResultPage() {
                   ) : (
                     <Square className="text-zinc-400 w-10 h-10" />
                   )}
-                </div>
+                </button>
               </div>
 
               {/* Status Text */}
@@ -1291,13 +1526,14 @@ export default function VibeResultPage() {
                 {voiceStatus === "listening" && "I'm listening..."}
                 {voiceStatus === "processing" && "Thinking..."}
                 {voiceStatus === "speaking" && "Agent Planner"}
-                {voiceStatus === "idle" && "Voice Paused"}
+                {voiceStatus === "idle" && "Ready"}
               </h2>
 
               <p className="text-slate-400 text-center text-sm md:text-base mb-10 min-h-[48px]">
-                {voiceStatus === "listening" && "Go ahead and speak. I'll detect when you stop."}
+                {voiceStatus === "listening" && "Speak now — tap the mic to send immediately."}
                 {voiceStatus === "processing" && "Processing your voice and generating my response."}
                 {voiceStatus === "speaking" && "Playing response... The conversation will continue automatically."}
+                {voiceStatus === "idle" && "Tap below to start the conversation."}
               </p>
 
               {/* Controls */}

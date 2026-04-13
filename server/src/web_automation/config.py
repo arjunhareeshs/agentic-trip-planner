@@ -6,7 +6,14 @@ load_dotenv()
 
 # Read from .env
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("REASONING_MODEL", "deepseek-v3.1:671b-cloud"))
+# Use SCRAPER_MODEL or DEFAULT_MODEL for extraction (faster than REASONING_MODEL)
+OLLAMA_MODEL = os.getenv(
+    "SCRAPER_MODEL",
+    os.getenv("DEFAULT_MODEL", os.getenv("REASONING_MODEL", "qwen3-vl:235b-cloud")),
+)
+# Strip 'ollama/' prefix if present (crawl4ai adds its own prefix)
+if OLLAMA_MODEL and OLLAMA_MODEL.startswith("ollama/"):
+    OLLAMA_MODEL = OLLAMA_MODEL[len("ollama/"):]
 
 def get_browser_config() -> BrowserConfig:
     """Returns the browser configuration for crawl4ai."""
@@ -22,10 +29,9 @@ def get_browser_config() -> BrowserConfig:
     )
 
 def get_llm_config() -> LLMConfig:
-    """Returns an LLMConfig pointing to local Ollama."""
-    model = os.getenv("OLLAMA_MODEL", os.getenv("REASONING_MODEL", "deepseek-v3.1:671b-cloud"))
+    """Returns an LLMConfig pointing to local Ollama (uses faster DEFAULT_MODEL)."""
     return LLMConfig(
-        provider=f"ollama/{model}",
+        provider=f"ollama/{OLLAMA_MODEL}",
         api_token="ollama",  # Ollama doesn't need a real key
         base_url=OLLAMA_BASE_URL,
         temperature=0.2,

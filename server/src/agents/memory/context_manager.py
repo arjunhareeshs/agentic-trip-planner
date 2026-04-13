@@ -242,7 +242,7 @@ def before_model_callback(
 # 4. AFTER ROOT AGENT  — exchange counting + memory persistence
 # ═══════════════════════════════════════════════════════════════════════════
 
-def after_root_agent_callback(
+async def after_root_agent_callback(
     callback_context: CallbackContext,
 ) -> Optional[genai_types.Content]:
     """
@@ -264,7 +264,7 @@ def after_root_agent_callback(
         )
         # Persist session events to long-term memory
         try:
-            callback_context.add_session_to_memory()
+            await callback_context.add_session_to_memory()
         except Exception as exc:
             logger.warning("add_session_to_memory failed: %s", exc)
 
@@ -317,7 +317,7 @@ def after_root_agent_callback(
                 text_parts = [p for p in c.parts if p.text]
                 if not text_parts:
                     continue
-                if any(_has_tool_call_text(p.text) for p in text_parts):
+                if any(_has_tool_call_text(p.text) for p in text_parts if p.text is not None):
                     cleaned_parts = []
                     for p in c.parts:
                         if p.text:
@@ -455,6 +455,183 @@ def _has_tool_call_text(text: str) -> bool:
         _RE_TOOL_CALLS_BLOCK.search(text)
         or _RE_TOOL_CALL_XML.search(text)
         or re.search(r'"type"\s*:\s*"function"\s*,\s*"function"\s*:', text)
+    )
+
+
+# ── Known tool / agent names (for intercepting text-based tool calls) ────────
+_KNOWN_TOOLS = frozenset({
+    "web_search", "scrape_page", "extract_web_content", "deep_web_scrape",
+    "search_place_images", "get_weather_forecast", "geocode",
+    "match_destinations", "filter_destinations", "get_destination_details",
+    "list_all_destinations", "get_graph_stats",
+})
+
+# All internal names (tools + agents) for narration filtering
+_INTERNAL_NAMES_SET = _KNOWN_TOOLS | frozenset({
+    "preference_agent", "itinerary_agent", "booking_agent",
+    "image_analysis_agent", "web_automation_agent",
+    "trip_planner_orchestrator",
+})
+
+# Regex patterns to extract tool call JSON from text output
+_RE_JSON_CODEBLOCK = re.compile(
+    r'```(?:json|tool_code|python|)\s*\n?\s*(\{.+?\})\s*\n?\s*```',
+    re.DOTALL,
+)
+_RE_BARE_TOOL_JSON = re.compile(
+    r'\{\s*"(?:name|function_call|tool_name)"\s*:.+?\}(?:\s*\})?',
+    re.DOTALL,
+)
+_RE_TOOL_CALLS_ARRAY = re.compile(
+    r'Tool\s+Calls?\s*:\s*(\[.+?\])',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _extract_tool_call_from_text(text: str):
+    """
+    Attempt to parse a tool call (name + args) from text the model emitted.
+    Returns (tool_name, args_dict) or None.
+    """
+    if not text:
+        return None
+
+    candidates = []
+
+    # 1. JSON inside ```code blocks```
+    for m in _RE_JSON_CODEBLOCK.finditer(text):
+        candidates.append(m.group(1))
+
+    # 2. "Tool Calls: [{...}]" array format
+    arr_match = _RE_TOOL_CALLS_ARRAY.search(text)
+    if arr_match:
+        try:
+            arr = json.loads(arr_match.group(1))
+            if isinstance(arr, list) and arr:
+                for item in arr:
+                    fn = item.get("function", item)
+                    name = fn.get("name", "")
+                    args = fn.get("arguments", fn.get("args", fn.get("parameters", {})))
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    if name in _KNOWN_TOOLS:
+                        return (name, args if isinstance(args, dict) else {})
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # 3. Bare JSON objects matching tool call pattern
+    for m in _RE_BARE_TOOL_JSON.finditer(text):
+        candidates.append(m.group(0))
+
+    # Try to parse each candidate
+    for raw in candidates:
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            # Try to fix truncated JSON by adding closing braces
+            try:
+                obj = json.loads(raw + "}")
+            except json.JSONDecodeError:
+                continue
+
+        if not isinstance(obj, dict):
+            continue
+
+        # Format A: {"name": "tool", "args": {...}}
+        name = obj.get("name", "")
+        args = obj.get("args", obj.get("arguments", obj.get("parameters", {})))
+
+        # Format B: {"function_call": {"name": "tool", "args": {...}}}
+        if not name and "function_call" in obj:
+            fc = obj["function_call"]
+            if isinstance(fc, dict):
+                name = fc.get("name", "")
+                args = fc.get("args", fc.get("arguments", fc.get("parameters", {})))
+
+        # Format C: {"tool_name": "tool", "tool_input": {...}}
+        if not name:
+            name = obj.get("tool_name", "")
+            if name:
+                args = obj.get("tool_input", obj.get("input", obj.get("args", {})))
+
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                args = {}
+
+        if name in _KNOWN_TOOLS:
+            return (name, args if isinstance(args, dict) else {})
+
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. AFTER MODEL  — intercept text-based tool calls from Ollama models
+# ═══════════════════════════════════════════════════════════════════════════
+
+def after_model_callback(
+    callback_context: CallbackContext,
+    llm_response: LlmResponse,
+) -> Optional[LlmResponse]:
+    """
+    Ollama/LiteLLM models sometimes emit tool calls as plain text (JSON)
+    instead of using the proper function_call mechanism. This callback:
+      1. Detects JSON tool call patterns in the model's text output
+      2. Parses the tool name + arguments
+      3. Returns a new LlmResponse with a proper function_call Part
+      4. ADK then executes the tool automatically
+
+    Without this, the tools never actually run and the model hallucinates
+    fake results.
+    """
+    if llm_response is None:
+        return None
+
+    content = llm_response.content
+    if content is None or not content.parts:
+        return None
+
+    # Already has a proper function_call? Let it through.
+    for part in content.parts:
+        if hasattr(part, "function_call") and part.function_call:
+            return None
+
+    # Collect all text from the response
+    all_text = ""
+    for part in content.parts:
+        if hasattr(part, "text") and part.text:
+            all_text += part.text + "\n"
+
+    if not all_text.strip():
+        return None
+
+    # Try to extract a tool call from the text
+    tool_call = _extract_tool_call_from_text(all_text)
+    if tool_call is None:
+        return None
+
+    tool_name, tool_args = tool_call
+    logger.info(
+        "after_model_callback: Intercepted text-based tool call → %s(%s)",
+        tool_name, json.dumps(tool_args, ensure_ascii=False)[:200],
+    )
+
+    # Build a proper function_call Part
+    fc_part = genai_types.Part.from_function_call(
+        name=tool_name,
+        args=tool_args,
+    )
+
+    # Return a new LlmResponse that replaces the text with the function call
+    return LlmResponse(
+        content=genai_types.Content(
+            role="model",
+            parts=[fc_part],
+        ),
     )
 
 
@@ -778,7 +955,7 @@ def _extract_text(content: genai_types.Content) -> str:
     return " ".join(p.text or "" for p in parts if p.text).strip()
 
 
-def _extract_preference_facts(state: dict, text: str) -> None:
+def _extract_preference_facts(state: Any, text: str) -> None:
     """
     Parse the preference agent's output for the top-ranked destination
     and update the user preference profile in state.
@@ -802,7 +979,7 @@ def _extract_preference_facts(state: dict, text: str) -> None:
     state[KEY_PREF_PROFILE] = profile
 
 
-def _extract_itinerary_facts(state: dict, text: str) -> None:
+def _extract_itinerary_facts(state: Any, text: str) -> None:
     """
     Extract destination and cost summary from itinerary agent output.
     """
@@ -825,7 +1002,7 @@ def _extract_itinerary_facts(state: dict, text: str) -> None:
         state[KEY_ITINERARY_HIGHLIGHTS] = text[:300].replace("\n", " ").strip()
 
 
-def _extract_booking_facts(state: dict, text: str) -> None:
+def _extract_booking_facts(state: Any, text: str) -> None:
     """
     Extract a one-line booking status summary from booking agent output.
     """
@@ -862,7 +1039,7 @@ _HIGH_WIND_MPS = 20.0  # ~72 km/h
 _HEAVY_RAIN_MM = 30.0  # per 3-hour period
 
 
-def _run_weather_safety_check(state: dict) -> None:
+def _run_weather_safety_check(state: Any) -> None:
     """
     After a booking is confirmed, automatically check the weather forecast
     for the destination. If hazardous conditions are detected, store a

@@ -1,38 +1,23 @@
 """Itinerary Sub-Agent.
 
-Builds detailed day-by-day itineraries using maps, places, weather, and routing.
-Called by the orchestrator AFTER a destination and all preferences are confirmed.
+Creates detailed day-by-day travel itineraries with venues,
+routes, hotels, restaurants, costs, and weather.
 """
 
-from google.adk.agents import LlmAgent  # type: ignore[import-untyped]
+from google.adk.agents import LlmAgent
 import os
 
-from ..prompts.itinerary_prompt import ITINERARY_INSTRUCTION
-from ..tools.api_connectors.geoapify import search_places, get_place_details, geocode, get_route
-from ..tools.api_connectors.openweather import get_weather_forecast
-from ..tools.web_search import web_search
-from ..memory import after_subagent_callback, before_tool_callback, after_tool_callback
+from agents.prompts.itinerary_prompt import ITINERARY_INSTRUCTION
+from agents.tools.agenttools.maps_and_places_agent import maps_and_places_agent_tool
 
 itinerary_agent = LlmAgent(
     name="itinerary_agent",
-    model=os.getenv("REASONING_MODEL", "ollama/deepseek-v3.1:671b-cloud"),
+    model=os.getenv("REASONING_MODEL", "deepseek-v3.1:671b-cloud"),
     instruction=ITINERARY_INSTRUCTION,
     description=(
-        "ONLY call this agent when the user has CONFIRMED a specific destination, "
-        "duration, budget, dietary preferences, and travel mode. It builds a full "
-        "day-by-day itinerary with hotels, restaurants, attractions, routes, weather, "
-        "and cost breakdown. Send it all confirmed details. It does NOT talk to the user directly."
+        "Creates detailed day-by-day trip itineraries. Uses maps, places, weather, "
+        "and routing tools to build comprehensive plans within the user's budget "
+        "including hotels, restaurants, attractions, transport costs, and timings."
     ),
-    tools=[
-        search_places,
-        get_place_details,
-        geocode,
-        get_route,
-        get_weather_forecast,
-        web_search,
-    ],
-    after_agent_callback=after_subagent_callback,
-    before_tool_callback=before_tool_callback,
-    after_tool_callback=after_tool_callback,
-    output_key="itinerary_result",
+    tools=[maps_and_places_agent_tool],
 )
